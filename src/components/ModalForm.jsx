@@ -21,7 +21,7 @@ const ModalForm = ({
   };
 
   return (
-    <Transition.Root show={isOpen} as={Fragment}>
+    <Transition appear show={isOpen} as={Fragment}>
       <Dialog
         as="div"
         className="fixed z-50 inset-0 overflow-y-auto"
@@ -38,7 +38,7 @@ const ModalForm = ({
             leaveFrom="opacity-100"
             leaveTo="opacity-0"
           >
-            <Dialog.Overlay className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
           </Transition.Child>
 
           {/* This element is to trick the browser into centering the modal contents. */}
@@ -63,10 +63,7 @@ const ModalForm = ({
             >
               <div className="bg-white px-4 pt-5 pb-4 sm:p-6">
                 <div className="flex items-start justify-between">
-                  <Dialog.Title
-                    as="h3"
-                    className="text-lg font-medium leading-6 text-gray-900"
-                  >
+                  <Dialog.Title className="text-lg font-medium leading-6 text-gray-900">
                     {title}
                   </Dialog.Title>
                   <div className="ml-3 h-7 flex items-center">
@@ -105,7 +102,7 @@ const ModalForm = ({
           </Transition.Child>
         </div>
       </Dialog>
-    </Transition.Root>
+    </Transition>
   );
 };
 
