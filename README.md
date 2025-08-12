@@ -27,6 +27,7 @@ GIMBO Admin es una aplicación web para la gestión integral de gimnasios, desar
 - **Recharts**: Biblioteca de gráficos para React
 - **Headless UI**: Componentes UI sin estilos
 - **React-to-PDF / jsPDF**: Generación de documentos PDF
+- **PocketBase**: Base de datos y backend con API autogenerada
 
 ## Requisitos
 
@@ -48,6 +49,7 @@ GIMBO Admin es una aplicación web para la gestión integral de gimnasios, desar
    npm install
    npm install react-router-dom@6.22.1
    npm install tailwindcss@3.3.5 postcss autoprefixer
+   npm install pocketbase
    ```
 
    **Nota sobre dependencias**: Es importante usar la versión 3.3.5 de Tailwind CSS para evitar incompatibilidades con otras dependencias del proyecto. Versiones más recientes pueden causar problemas de compilación.
@@ -72,6 +74,10 @@ GIMBO Admin es una aplicación web para la gestión integral de gimnasios, desar
 5. **Importante:** Cuando accedas, asegúrate de usar la URL base exacta que muestra la terminal.
 
    La aplicación utiliza HashRouter para evitar problemas de routing, por lo que las rutas internas funcionarán con el formato: `/#/socios`, `/#/pagos`, etc.
+   
+6. **Configuración de PocketBase**:
+
+   Sigue las instrucciones en el archivo [POCKETBASE.md](./POCKETBASE.md) para configurar el backend.
 
    **Solución a problemas de routing (Error 404):**
 
@@ -97,8 +103,11 @@ gimbo-admin/
 ├── src/                  # Código fuente
 │   ├── assets/           # Recursos estáticos (imágenes, fuentes)
 │   ├── components/       # Componentes reutilizables
+│   ├── context/          # Contextos de React (ej. PocketBaseContext)
 │   ├── data/             # Datos de ejemplo (mock)
+│   ├── lib/              # Utilidades y servicios base
 │   ├── pages/            # Páginas/vistas de la aplicación
+│   ├── services/         # Servicios específicos de negocio
 │   ├── App.jsx           # Componente principal
 │   ├── config.js         # Configuración global
 │   ├── index.css         # Estilos globales

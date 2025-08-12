@@ -7,10 +7,14 @@ import {
   SunIcon,
   MoonIcon,
 } from "@heroicons/react/24/outline";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import PocketbaseStatus from "./PocketbaseStatus";
+import { usePocketBase } from "../context/usePocketBase";
 
 const Navbar = () => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { logout, currentUser } = usePocketBase();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [darkMode, setDarkMode] = useState(() => {
@@ -61,6 +65,9 @@ const Navbar = () => {
       </div>
 
       <div className="flex items-center space-x-4">
+        {/* DB Status */}
+        <PocketbaseStatus />
+
         {/* Theme Toggle */}
         <button
           onClick={toggleDarkMode}
@@ -136,7 +143,16 @@ const Navbar = () => {
             onClick={() => setShowProfileMenu(!showProfileMenu)}
             className="flex items-center space-x-2"
           >
-            <UserCircleIcon className="h-8 w-8 text-dark-light dark:text-light-darker" />
+            {currentUser ? (
+              <div className="flex items-center">
+                <span className="text-sm mr-2 text-dark-light dark:text-light-darker hidden md:block">
+                  {currentUser.username || currentUser.email}
+                </span>
+                <UserCircleIcon className="h-8 w-8 text-dark-light dark:text-light-darker" />
+              </div>
+            ) : (
+              <UserCircleIcon className="h-8 w-8 text-dark-light dark:text-light-darker" />
+            )}
           </button>
 
           {showProfileMenu && (
@@ -153,12 +169,16 @@ const Navbar = () => {
               >
                 Configuración
               </a>
-              <a
-                href="#"
-                className="block px-4 py-2 text-sm text-gray-700 dark:text-light-darker hover:bg-gray-100 dark:hover:bg-dark-light"
+              <button
+                onClick={() => {
+                  logout();
+                  navigate('/login');
+                  setShowProfileMenu(false);
+                }}
+                className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-light-darker hover:bg-gray-100 dark:hover:bg-dark-light"
               >
                 Cerrar Sesión
-              </a>
+              </button>
             </div>
           )}
         </div>

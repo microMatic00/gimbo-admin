@@ -1,0 +1,8 @@
+{
+  "socio": "ID_DEL_SOCIO",
+  "fecha_hora_entrada": "2025-08-12T10:30:00Z",
+  "fecha_hora_salida": "2025-08-12T11:45:00Z",
+  "clase": "ID_DE_LA_CLASE",
+  "notas": "Participó en clase de spinning",
+  "registrado_por": "ID_DEL_USUARIO_STAFF"
+}
