@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { HashRouter } from "react-router-dom";
+import { PocketBaseProvider } from "./context/PocketBaseContext";
 import "./index.css";
 import App from "./App.jsx";
 
@@ -11,9 +12,11 @@ if (!root) {
 } else {
   createRoot(root).render(
     <StrictMode>
-      <HashRouter>
-        <App />
-      </HashRouter>
+      <PocketBaseProvider>
+        <HashRouter>
+          <App />
+        </HashRouter>
+      </PocketBaseProvider>
     </StrictMode>
   );
 }

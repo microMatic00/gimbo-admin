@@ -1,0 +1,15 @@
+{
+  "Nombre": "Juan Pérez",
+  "email": "juan@ejemplo.com",
+  "telefono": "123456789",
+  "documento": "12345678",
+  "tipo_documento": "DNI",
+  "fecha_nacimiento": "1990-01-01",
+  "genero": "Masculino",
+  "direccion": "Calle Principal 123",
+  "estado_socio": "Activo",
+  "fecha_inscripcion": "2024-01-15",
+  "notas": "Cliente regular desde 2024",
+  "membresia": "ID_DE_MEMBRESIA",
+  "fecha_vencimiento": "2024-12-31"
+}

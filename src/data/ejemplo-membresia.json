@@ -1,0 +1,14 @@
+{
+  "nombre": "Membresía Premium",
+  "descripcion": "Acceso ilimitado a todas las instalaciones y clases",
+  "precio": 5000,
+  "duracio_dias": 30,
+  "activa": true,
+  "beneficios": [
+    "Acceso ilimitado 24/7",
+    "Todas las clases incluidas",
+    "Acceso a sauna",
+    "1 evaluación física mensual"
+  ],
+  "color": "#FF5A1F"
+}
