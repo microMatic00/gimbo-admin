@@ -1,36 +1,79 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Table from "../components/Table";
 import ModalForm from "../components/ModalForm";
-import { pagos, socios, planes } from "../data/mockData";
+import { usePocketBase } from "../context/usePocketBase";
+
 import {
   CurrencyDollarIcon,
   DocumentArrowDownIcon,
 } from "@heroicons/react/24/outline";
 
 const Pagos = () => {
-  const [pagosList, setPagosList] = useState(pagos);
+  const { pb } = usePocketBase();
+  const [pagosList, setPagosList] = useState([]);
+  const [sociosList, setSociosList] = useState([]);
+  const [planesList, setPlanesList] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentPago, setCurrentPago] = useState(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [pagoToDelete, setPagoToDelete] = useState(null);
   const [activeTab, setActiveTab] = useState("pagos"); // pagos, planes, vencimientos
+  const [loading, setLoading] = useState(true);
+
+  // Efecto para cargar datos iniciales desde PocketBase
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+
+        // Cargar pagos
+        const pagosResult = await pb.collection("pagos").getList(1, 50, {
+          sort: "-fecha_pago",
+          expand: "socio,membresia",
+        });
+        setPagosList(pagosResult.items);
+
+        // Cargar socios
+        const sociosResult = await pb.collection("socios").getList(1, 100, {
+          sort: "Nombre",
+        });
+        setSociosList(sociosResult.items);
+
+        // Cargar planes (membresias) - quitamos el filtro por activa para ver todos los planes
+        const planesResult = await pb.collection("membresias").getList(1, 100, {
+          sort: "precio",
+        });
+        setPlanesList(planesResult.items);
+
+        // Verificar los planes cargados
+        console.log("Planes cargados:", planesResult.items);
+
+        setLoading(false);
+      } catch (error) {
+        console.error("Error al cargar datos:", error);
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [pb]);
 
   // Columnas para la tabla de pagos
   const pagoColumns = [
     {
-      key: "socioId",
+      key: "socio",
       header: "Socio",
       render: (item) => {
-        const socio = socios.find((s) => s.id === item.socioId);
-        return socio ? socio.nombre : "Desconocido";
+        return item.expand?.socio ? item.expand.socio.Nombre : "Desconocido";
       },
     },
     {
-      key: "planId",
+      key: "membresia",
       header: "Plan",
       render: (item) => {
-        const plan = planes.find((p) => p.id === item.planId);
-        return plan ? plan.nombre : "Desconocido";
+        return item.expand?.membresia
+          ? item.expand.membresia.nombre
+          : "Desconocido";
       },
     },
     {
@@ -39,11 +82,14 @@ const Pagos = () => {
       render: (item) => `$${item.monto.toLocaleString()}`,
     },
     {
-      key: "fecha",
+      key: "fecha_pago",
       header: "Fecha",
-      render: (item) => formatDate(item.fecha),
+      render: (item) => formatDate(item.fecha_pago),
     },
-    { key: "metodo", header: "Método de Pago" },
+    {
+      key: "metodo_pago",
+      header: "Método de Pago",
+    },
     {
       key: "estado",
       header: "Estado",
@@ -61,7 +107,11 @@ const Pagos = () => {
         </span>
       ),
     },
-    { key: "comprobante", header: "Comprobante" },
+    {
+      key: "comprobante",
+      header: "Comprobante",
+      render: (item) => (item.comprobante ? "✓" : "-"),
+    },
   ];
 
   // Columnas para la tabla de planes
@@ -72,40 +122,75 @@ const Pagos = () => {
       header: "Precio",
       render: (item) => `$${item.precio.toLocaleString()}`,
     },
-    { key: "duracion", header: "Duración" },
-    { key: "descripcion", header: "Descripción" },
     {
-      key: "activo",
+      key: "duracio_dias",
+      header: "Duración",
+      render: (item) => `${item.duracio_dias} días`,
+    },
+    {
+      key: "descripcion",
+      header: "Descripción",
+      render: (item) =>
+        item.descripcion
+          ? item.descripcion.substring(0, 50) +
+            (item.descripcion.length > 50 ? "..." : "")
+          : "",
+    },
+    {
+      key: "activa",
       header: "Estado",
       render: (item) => (
         <span
           className={`px-2 py-1 rounded-full text-xs font-medium ${
-            item.activo
+            item.activa
               ? "bg-green-100 text-green-800"
               : "bg-red-100 text-red-800"
           }`}
         >
-          {item.activo ? "Activo" : "Inactivo"}
+          {item.activa ? "Activo" : "Inactivo"}
         </span>
       ),
     },
   ];
 
-  // Datos de vencimientos (mock)
-  const vencimientos = socios
-    .filter(
-      (socio) =>
-        socio.estado === "Próximo a vencer" || socio.estado === "Vencido"
-    )
-    .map((socio) => ({
-      id: socio.id,
-      nombre: socio.nombre,
-      plan: socio.planActivo,
-      estado: socio.estado,
-      fechaVencimiento:
-        socio.estado === "Vencido" ? "2025-07-31" : "2025-08-15",
-      diasRestantes: socio.estado === "Vencido" ? -9 : 6,
-    }));
+  // Datos de vencimientos (calculados de los socios)
+  const [vencimientos, setVencimientos] = useState([]);
+
+  // Efecto para calcular vencimientos basados en los socios
+  useEffect(() => {
+    if (sociosList.length === 0) return;
+
+    const hoy = new Date();
+    const resultados = sociosList
+      .filter((socio) => socio.fecha_vencimiento) // solo aquellos con fecha de vencimiento
+      .map((socio) => {
+        const fechaVencimiento = new Date(socio.fecha_vencimiento);
+        const diasRestantes = Math.ceil(
+          (fechaVencimiento - hoy) / (1000 * 60 * 60 * 24)
+        );
+        const estado =
+          diasRestantes < 0
+            ? "Vencido"
+            : diasRestantes <= 7
+            ? "Próximo a vencer"
+            : "Activo";
+
+        return {
+          id: socio.id,
+          nombre: socio.Nombre,
+          plan: socio.expand?.membresia?.nombre || "Desconocido",
+          estado: estado,
+          fechaVencimiento: socio.fecha_vencimiento,
+          diasRestantes: diasRestantes,
+        };
+      })
+      .filter(
+        (socio) =>
+          socio.estado === "Próximo a vencer" || socio.estado === "Vencido"
+      );
+
+    setVencimientos(resultados);
+  }, [sociosList]);
 
   // Columnas para la tabla de vencimientos
   const vencimientosColumns = [
@@ -143,6 +228,19 @@ const Pagos = () => {
     return new Date(dateString).toLocaleDateString("es-ES", options);
   };
 
+  // Calcular ingresos del mes actual
+  const calcularIngresosMes = (pagos) => {
+    const hoy = new Date();
+    const primerDiaDelMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+
+    return pagos
+      .filter((pago) => {
+        const fechaPago = new Date(pago.fecha_pago);
+        return fechaPago >= primerDiaDelMes && fechaPago <= hoy;
+      })
+      .reduce((total, pago) => total + pago.monto, 0);
+  };
+
   // Abrir el modal para crear un nuevo pago
   const handleAddNew = () => {
     setCurrentPago(null);
@@ -162,38 +260,89 @@ const Pagos = () => {
   };
 
   // Confirmar la eliminación del pago
-  const confirmDelete = () => {
-    setPagosList(pagosList.filter((pago) => pago.id !== pagoToDelete.id));
-    setIsDeleteModalOpen(false);
+  const confirmDelete = async () => {
+    try {
+      await pb.collection("pagos").delete(pagoToDelete.id);
+      setPagosList(pagosList.filter((pago) => pago.id !== pagoToDelete.id));
+      setIsDeleteModalOpen(false);
+    } catch (error) {
+      console.error("Error al eliminar el pago:", error);
+      alert("Error al eliminar el pago: " + error.message);
+    }
   };
 
   // Manejar el envío del formulario
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
 
-    const pagoData = {
-      id: currentPago?.id || pagosList.length + 1,
-      socioId: parseInt(formData.get("socioId")),
-      planId: parseInt(formData.get("planId")),
-      monto: parseFloat(formData.get("monto")),
-      fecha: formData.get("fecha"),
-      metodo: formData.get("metodo"),
-      estado: formData.get("estado"),
-      comprobante: formData.get("comprobante"),
-    };
+    try {
+      // Preparar los datos del pago según la estructura de PocketBase
+      const pagoData = {
+        socio: formData.get("socioId"),
+        membresia: formData.get("planId"),
+        monto: parseFloat(formData.get("monto")),
+        fecha_pago: formData.get("fecha"),
+        metodo_pago: formData.get("metodo"),
+        estado: formData.get("estado"),
+        field: "Membresia", // Tipo de pago (definido en la colección)
+        notas: `Comprobante: ${formData.get("comprobante")}`,
+      };
 
-    if (currentPago) {
-      // Actualizar pago existente
-      setPagosList(
-        pagosList.map((pago) => (pago.id === currentPago.id ? pagoData : pago))
-      );
-    } else {
-      // Agregar nuevo pago
-      setPagosList([...pagosList, pagoData]);
+      if (currentPago) {
+        // Actualizar pago existente
+        await pb.collection("pagos").update(currentPago.id, pagoData);
+
+        // Actualizar la lista local
+        setPagosList(
+          pagosList.map((pago) =>
+            pago.id === currentPago.id ? { ...pago, ...pagoData } : pago
+          )
+        );
+      } else {
+        console.log("Enviando datos de nuevo pago:", pagoData);
+
+        // Agregar nuevo pago
+        const createdPago = await pb.collection("pagos").create(pagoData);
+
+        console.log("Pago creado:", createdPago);
+
+        // Obtener el pago creado con sus relaciones expandidas
+        const newPago = await pb.collection("pagos").getOne(createdPago.id, {
+          expand: "socio,membresia",
+        });
+
+        console.log("Pago con relaciones expandidas:", newPago);
+
+        // Actualizar la lista local
+        setPagosList([newPago, ...pagosList]);
+
+        // Si corresponde, actualizar la fecha de vencimiento del socio
+        if (pagoData.field === "Membresia") {
+          const socio = sociosList.find((s) => s.id === pagoData.socio);
+          const membresia = planesList.find((p) => p.id === pagoData.membresia);
+
+          if (socio && membresia) {
+            const fechaPago = new Date(pagoData.fecha_pago);
+            const fechaVencimiento = new Date(fechaPago);
+            fechaVencimiento.setDate(
+              fechaVencimiento.getDate() + membresia.duracio_dias
+            );
+
+            await pb.collection("socios").update(socio.id, {
+              membresia: membresia.id,
+              fecha_vencimiento: fechaVencimiento.toISOString().split("T")[0],
+              estado_socio: "Activo",
+            });
+          }
+        }
+      }
+
+      setIsModalOpen(false);
+    } catch (error) {
+      console.error("Error al guardar el pago:", error);
+      alert("Error al guardar el pago: " + error.message);
     }
-
-    setIsModalOpen(false);
   };
 
   // Manejar la generación de reporte
@@ -246,7 +395,7 @@ const Pagos = () => {
             </div>
             <Table
               columns={planesColumns}
-              data={planes}
+              data={planesList}
               onEdit={() => {}} // En una implementación completa, esto abriría un modal
               onDelete={() => {}}
             />
@@ -290,7 +439,9 @@ const Pagos = () => {
           <h3 className="text-sm font-medium text-gray-500">
             Ingresos del Mes
           </h3>
-          <p className="text-2xl font-bold">$185,000</p>
+          <p className="text-2xl font-bold">
+            ${calcularIngresosMes(pagosList).toLocaleString()}
+          </p>
         </div>
         <div className="bg-white p-4 rounded-lg shadow-sm">
           <h3 className="text-sm font-medium text-gray-500">
@@ -372,13 +523,13 @@ const Pagos = () => {
               id="socioId"
               name="socioId"
               className="form-input"
-              defaultValue={currentPago?.socioId || ""}
+              defaultValue={currentPago?.socio || ""}
               required
             >
               <option value="">Seleccionar Socio</option>
-              {socios.map((socio) => (
+              {sociosList.map((socio) => (
                 <option key={socio.id} value={socio.id}>
-                  {socio.nombre}
+                  {socio.Nombre}
                 </option>
               ))}
             </select>
@@ -394,15 +545,21 @@ const Pagos = () => {
               id="planId"
               name="planId"
               className="form-input"
-              defaultValue={currentPago?.planId || ""}
+              defaultValue={currentPago?.membresia || ""}
               required
             >
               <option value="">Seleccionar Plan</option>
-              {planes.map((plan) => (
-                <option key={plan.id} value={plan.id}>
-                  {plan.nombre} - ${plan.precio}
+              {planesList && planesList.length > 0 ? (
+                planesList.map((plan) => (
+                  <option key={plan.id} value={plan.id}>
+                    {plan.nombre} - ${plan.precio}
+                  </option>
+                ))
+              ) : (
+                <option value="" disabled>
+                  Cargando planes...
                 </option>
-              ))}
+              )}
             </select>
           </div>
           <div>
@@ -435,7 +592,8 @@ const Pagos = () => {
               type="date"
               className="form-input"
               defaultValue={
-                currentPago?.fecha || new Date().toISOString().split("T")[0]
+                currentPago?.fecha_pago ||
+                new Date().toISOString().split("T")[0]
               }
               required
             />
@@ -451,7 +609,7 @@ const Pagos = () => {
               id="metodo"
               name="metodo"
               className="form-input"
-              defaultValue={currentPago?.metodo || ""}
+              defaultValue={currentPago?.metodo_pago || ""}
               required
             >
               <option value="">Seleccionar Método</option>
