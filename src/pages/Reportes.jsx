@@ -5,13 +5,7 @@ import {
   TableCellsIcon,
   CalendarDaysIcon,
 } from "@heroicons/react/24/outline";
-import {
-  socios,
-  asistencias,
-  pagos,
-  ventas,
-  productos,
-} from "../data/mockData";
+import { socios, asistencias, pagos, ventas } from "../data/mockData";
 
 const Reportes = () => {
   const [reportType, setReportType] = useState("");
