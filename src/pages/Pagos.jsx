@@ -1,7 +1,12 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Table from "../components/Table";
 import ModalForm from "../components/ModalForm";
 import { usePocketBase } from "../context/usePocketBase";
+import {
+  PagosService,
+  SociosService,
+  MembresiasService,
+} from "../services/gimnasio-services";
 
 import {
   CurrencyDollarIcon,
@@ -18,34 +23,38 @@ const Pagos = () => {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [pagoToDelete, setPagoToDelete] = useState(null);
   const [activeTab, setActiveTab] = useState("pagos"); // pagos, planes, vencimientos
-  const [loading, setLoading] = useState(true);
+  const [_loading, setLoading] = useState(true);
+  // Reutilizar instancias de servicios
+  const pagosServiceRef = useRef(new PagosService());
+  const sociosServiceRef = useRef(new SociosService());
+  const membresiasServiceRef = useRef(new MembresiasService());
 
   // Efecto para cargar datos iniciales desde PocketBase
   useEffect(() => {
+    const pagosService = pagosServiceRef.current;
+    const sociosService = sociosServiceRef.current;
+    const membresiasService = membresiasServiceRef.current;
+
     const fetchData = async () => {
       try {
         setLoading(true);
 
-        // Cargar pagos
-        const pagosResult = await pb.collection("pagos").getList(1, 50, {
+        const pagosResult = await pagosService.getAll({
           sort: "-fecha_pago",
           expand: "socio,membresia",
+          $autoCancel: false,
         });
         setPagosList(pagosResult.items);
 
-        // Cargar socios
-        const sociosResult = await pb.collection("socios").getList(1, 100, {
+        const sociosResult = await sociosService.getAll({
           sort: "Nombre",
+          expand: "membresia",
         });
         setSociosList(sociosResult.items);
 
-        // Cargar planes (membresias) - quitamos el filtro por activa para ver todos los planes
-        const planesResult = await pb.collection("membresias").getList(1, 100, {
-          sort: "precio",
-        });
+        const planesResult = await membresiasService.getAll({ sort: "precio" });
         setPlanesList(planesResult.items);
 
-        // Verificar los planes cargados
         console.log("Planes cargados:", planesResult.items);
 
         setLoading(false);
@@ -56,6 +65,12 @@ const Pagos = () => {
     };
 
     fetchData();
+
+    return () => {
+      pagosService.abortAll();
+      sociosService.abortAll();
+      membresiasService.abortAll();
+    };
   }, [pb]);
 
   // Columnas para la tabla de pagos
@@ -195,7 +210,21 @@ const Pagos = () => {
   // Columnas para la tabla de vencimientos
   const vencimientosColumns = [
     { key: "nombre", header: "Socio" },
-    { key: "plan", header: "Plan" },
+    {
+      key: "plan",
+      header: "Plan",
+      render: (item) => {
+        // Intentar varios paths donde podría venir el nombre del plan
+        const planNombre =
+          item.expand?.membresia?.nombre ||
+          item.membresia?.nombre ||
+          item.plan ||
+          item.planActivo ||
+          "DESCONOCIDO";
+
+        return <span>{planNombre}</span>;
+      },
+    },
     {
       key: "fechaVencimiento",
       header: "Fecha de Vencimiento",
@@ -262,8 +291,11 @@ const Pagos = () => {
   // Confirmar la eliminación del pago
   const confirmDelete = async () => {
     try {
-      await pb.collection("pagos").delete(pagoToDelete.id);
-      setPagosList(pagosList.filter((pago) => pago.id !== pagoToDelete.id));
+      const pagosService = pagosServiceRef.current;
+      await pagosService.delete(pagoToDelete.id);
+      setPagosList((prev) =>
+        prev.filter((pago) => pago.id !== pagoToDelete.id)
+      );
       setIsDeleteModalOpen(false);
     } catch (error) {
       console.error("Error al eliminar el pago:", error);
@@ -289,33 +321,32 @@ const Pagos = () => {
         notas: `Comprobante: ${formData.get("comprobante")}`,
       };
 
+      const pagosService = pagosServiceRef.current;
+      const sociosService = sociosServiceRef.current;
+
       if (currentPago) {
-        // Actualizar pago existente
-        await pb.collection("pagos").update(currentPago.id, pagoData);
+        // Actualizar pago existente mediante el servicio
+        await pagosService.update(currentPago.id, pagoData);
 
         // Actualizar la lista local
-        setPagosList(
-          pagosList.map((pago) =>
+        setPagosList((prev) =>
+          prev.map((pago) =>
             pago.id === currentPago.id ? { ...pago, ...pagoData } : pago
           )
         );
       } else {
         console.log("Enviando datos de nuevo pago:", pagoData);
 
-        // Agregar nuevo pago
-        const createdPago = await pb.collection("pagos").create(pagoData);
+        // Agregar nuevo pago usando el servicio
+        const createdPago = await pagosService.create(pagoData);
 
-        console.log("Pago creado:", createdPago);
-
-        // Obtener el pago creado con sus relaciones expandidas
-        const newPago = await pb.collection("pagos").getOne(createdPago.id, {
+        // Obtener el pago creado con relaciones expandidas
+        const newPago = await pagosService.getById(createdPago.id, {
           expand: "socio,membresia",
         });
 
-        console.log("Pago con relaciones expandidas:", newPago);
-
         // Actualizar la lista local
-        setPagosList([newPago, ...pagosList]);
+        setPagosList((prev) => [newPago, ...prev]);
 
         // Si corresponde, actualizar la fecha de vencimiento del socio
         if (pagoData.field === "Membresia") {
@@ -326,10 +357,11 @@ const Pagos = () => {
             const fechaPago = new Date(pagoData.fecha_pago);
             const fechaVencimiento = new Date(fechaPago);
             fechaVencimiento.setDate(
-              fechaVencimiento.getDate() + membresia.duracio_dias
+              fechaVencimiento.getDate() +
+                (membresia.duracio_dias || membresia.duracion || 0)
             );
 
-            await pb.collection("socios").update(socio.id, {
+            await sociosService.update(socio.id, {
               membresia: membresia.id,
               fecha_vencimiento: fechaVencimiento.toISOString().split("T")[0],
               estado_socio: "Activo",
