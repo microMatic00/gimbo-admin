@@ -53,6 +53,47 @@ const Socios = () => {
   }, [isAuthenticated]);
 
   // Columnas para la tabla
+  // Utilidades para calcular vencimientos a partir de la membresía
+  const addDays = (date, days) => {
+    const d = new Date(date);
+    d.setDate(d.getDate() + Number(days));
+    return d;
+  };
+
+  const getExpirationDate = (socio) => {
+    // Si ya existe fecha_vencimiento, usarla
+    if (socio?.fecha_vencimiento) return new Date(socio.fecha_vencimiento);
+
+    // Intentar obtener la membresía expandida o directa
+    const membresia = socio?.expand?.membresia || socio?.membresia || null;
+
+    const duracion =
+      membresia?.duracio_dias ||
+      membresia?.duracion ||
+      membresia?.duracion_dias ||
+      membresia?.duracionDias ||
+      membresia?.dias;
+
+    const fechaInscripcion = socio?.fecha_inscripcion || socio?.fechaRegistro || socio?.fecha_registro;
+
+    if (fechaInscripcion && duracion) {
+      return addDays(new Date(fechaInscripcion), Number(duracion));
+    }
+
+    return null;
+  };
+
+  const getVencimientoStatus = (socio) => {
+    const exp = getExpirationDate(socio);
+    if (!exp) return null;
+    const today = new Date();
+    const diffDays = Math.ceil((exp - today) / (1000 * 60 * 60 * 24));
+    if (diffDays < 0) return "Vencido";
+    if (diffDays <= 7) return "Próximo a vencer";
+    return "Activo";
+  };
+
+  // Columnas para la tabla
   const columns = [
     { key: "Nombre", header: "Nombre" },
     { key: "documento", header: "Documento" },
@@ -62,33 +103,35 @@ const Socios = () => {
       key: "membresia",
       header: "Membresía",
       render: (item) => (
-        <span>{item.expand?.membresia?.nombre || "Sin membresía"}</span>
+        <span>{item.expand?.membresia?.nombre || item.membresia?.nombre || "Sin membresía"}</span>
       ),
     },
     {
       key: "estado_socio",
       header: "Estado",
-      render: (item) => (
-        <span
-          className={`px-2 py-1 rounded-full text-xs font-medium ${
-            item.estado_socio === "Activo"
-              ? "bg-green-100 text-green-800"
-              : item.estado_socio === "Inactivo"
-              ? "bg-red-100 text-red-800"
-              : "bg-yellow-100 text-yellow-800"
-          }`}
-        >
-          {item.estado_socio}
-        </span>
-      ),
+      render: (item) => {
+        const vencStatus = getVencimientoStatus(item);
+        const status = vencStatus || item.estado_socio || "Inactivo";
+        return (
+          <span
+            className={`px-2 py-1 rounded-full text-xs font-medium ${
+              status === "Activo"
+                ? "bg-green-100 text-green-800"
+                : status === "Vencido"
+                ? "bg-red-100 text-red-800"
+                : "bg-yellow-100 text-yellow-800"
+            }`}
+          >
+            {status}
+          </span>
+        );
+      },
     },
     {
       key: "fecha_vencimiento",
       header: "Vencimiento",
       render: (item) =>
-        item.fecha_vencimiento
-          ? formatDate(item.fecha_vencimiento)
-          : "Sin definir",
+        getExpirationDate(item) ? formatDate(getExpirationDate(item)) : "Sin definir",
     },
   ];
 
@@ -225,15 +268,12 @@ const Socios = () => {
           </p>
         </div>
         <div className="bg-white p-4 rounded-lg shadow-sm">
-          <h3 className="text-sm font-medium text-gray-500">
-            Próximos a Vencer
-          </h3>
-          <p className="text-2xl font-bold">
-            {
-              sociosList.filter((s) => s.estado_socio === "Próximo a vencer")
-                .length
-            }
-          </p>
+            <h3 className="text-sm font-medium text-gray-500">
+              Próximos a Vencer
+            </h3>
+            <p className="text-2xl font-bold">
+              {sociosList.filter((s) => getVencimientoStatus(s) === "Próximo a vencer").length}
+            </p>
         </div>
       </div>
 
@@ -379,22 +419,6 @@ const Socios = () => {
           <div> */}
           <div>
             <label
-              htmlFor="nombre"
-              className="block text-sm font-medium text-gray-700 mb-1"
-            >
-              Nombre Completo
-            </label>
-            <input
-              id="nombre"
-              name="nombre"
-              type="text"
-              className="form-input"
-              defaultValue={currentSocio?.nombre || ""}
-              required
-            />
-          </div>
-          <div>
-            <label
               htmlFor="estado"
               className="block text-sm font-medium text-gray-700 mb-1"
             >
@@ -409,7 +433,6 @@ const Socios = () => {
             >
               <option value="Activo">Activo</option>
               <option value="Vencido">Vencido</option>
-              <option value="Próximo a vencer">Próximo a vencer</option>
             </select>
           </div>
         </div>
