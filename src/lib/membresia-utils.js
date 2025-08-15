@@ -19,7 +19,8 @@ export const getExpirationDate = (socio) => {
     membresia?.duracionDias ||
     membresia?.dias;
 
-  const fechaInscripcion = socio?.fecha_inscripcion || socio?.fechaRegistro || socio?.fecha_registro;
+  const fechaInscripcion =
+    socio?.fecha_inscripcion || socio?.fechaRegistro || socio?.fecha_registro;
 
   if (fechaInscripcion && duracion) {
     return addDays(new Date(fechaInscripcion), Number(duracion));

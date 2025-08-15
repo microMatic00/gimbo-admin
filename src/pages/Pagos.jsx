@@ -7,7 +7,11 @@ import {
   SociosService,
   MembresiasService,
 } from "../services/gimnasio-services";
-import { getExpirationDate, getVencimientoStatus } from "../lib/membresia-utils";
+import { useToast } from "../hooks/useToast";
+import {
+  getExpirationDate,
+  getVencimientoStatus,
+} from "../lib/membresia-utils";
 
 import {
   CurrencyDollarIcon,
@@ -175,6 +179,7 @@ const Pagos = () => {
 
   // Datos de vencimientos (calculados de los socios)
   const [vencimientos, setVencimientos] = useState([]);
+  const { push: pushToast, ToastContainer } = useToast();
 
   // Efecto para calcular vencimientos basados en los socios
   useEffect(() => {
@@ -195,13 +200,18 @@ const Pagos = () => {
         return {
           id: socio.id,
           nombre: socio.Nombre,
+          // mantener el id de la membresía para acciones (renovar)
+          membresiaId: socio.expand?.membresia?.id || socio.membresia || null,
           plan: socio.expand?.membresia?.nombre || "Desconocido",
           estado: estado,
           fechaVencimiento: fechaVencimiento,
           diasRestantes: diasRestantes,
         };
       })
-      .filter((socio) => socio.estado === "Próximo a vencer" || socio.estado === "Vencido");
+      .filter(
+        (socio) =>
+          socio.estado === "Próximo a vencer" || socio.estado === "Vencido"
+      );
 
     setVencimientos(resultados);
   }, [sociosList]);
@@ -225,9 +235,65 @@ const Pagos = () => {
       },
     },
     {
+      key: "accion",
+      header: "Acción",
+      render: (item) => (
+        <button
+          className="text-sm text-primary underline"
+          onClick={async () => {
+            try {
+              const payload = {
+                socioId: item.id,
+                membresiaId: item.membresiaId || item.membresia || null,
+                pagoData: { monto: 0 },
+                mode: "renew",
+              };
+              // Log payload to help debug 400 responses from PocketBase
+              console.debug("Renovar payload:", payload);
+
+              // Guard: si no hay membresiaId no intentamos crear un pago (server rechazará)
+              if (!payload.membresiaId) {
+                console.warn(
+                  "No se puede renovar: membresiaId ausente para socio",
+                  item.id
+                );
+                pushToast(
+                  "No se pudo renovar: membresía desconocida para este socio",
+                  "error"
+                );
+                return;
+              }
+
+              await pagosServiceRef.current.createOrRenew(payload);
+              pushToast("Membresía renovada correctamente", "success");
+              // recargar datos
+              const pagosResult = await pagosServiceRef.current.getAll({
+                sort: "-fecha_pago",
+                expand: "socio,membresia",
+              });
+              setPagosList(pagosResult.items);
+              const sociosResult = await sociosServiceRef.current.getAll({
+                sort: "Nombre",
+                expand: "membresia",
+              });
+              setSociosList(sociosResult.items);
+            } catch (err) {
+              console.error("Error al renovar:", err);
+              pushToast(err.message || "Error renovando membresía", "error");
+            }
+          }}
+        >
+          Renovar
+        </button>
+      ),
+    },
+    {
       key: "fechaVencimiento",
       header: "Fecha de Vencimiento",
-      render: (item) => formatDate(item.fechaVencimiento),
+      render: (item) =>
+        item.fechaVencimiento
+          ? formatDate(item.fechaVencimiento)
+          : "Sin definir",
     },
     {
       key: "diasRestantes",
@@ -367,37 +433,33 @@ const Pagos = () => {
         );
       } else {
         console.log("Enviando datos de nuevo pago:", pagoData);
+        // Agregar nuevo pago usando la lógica segura createOrRenew
+        try {
+          await pagosService.createOrRenew({
+            socioId: pagoData.socio,
+            membresiaId: pagoData.membresia,
+            pagoData,
+            mode: "allow", // permitir pago en cualquier momento; sumará días si hay vigencia
+          });
 
-        // Agregar nuevo pago usando el servicio
-        const createdPago = await pagosService.create(pagoData);
+          // Recargar pagos y socios para reflejar cambios
+          const pagosResult = await pagosService.getAll({
+            sort: "-fecha_pago",
+            expand: "socio,membresia",
+          });
+          setPagosList(pagosResult.items);
 
-        // Obtener el pago creado con relaciones expandidas
-        const newPago = await pagosService.getById(createdPago.id, {
-          expand: "socio,membresia",
-        });
-
-        // Actualizar la lista local
-        setPagosList((prev) => [newPago, ...prev]);
-
-        // Si corresponde, actualizar la fecha de vencimiento del socio
-        if (pagoData.field === "Membresia") {
-          const socio = sociosList.find((s) => s.id === pagoData.socio);
-          const membresia = planesList.find((p) => p.id === pagoData.membresia);
-
-          if (socio && membresia) {
-            const fechaPago = new Date(pagoData.fecha_pago);
-            const fechaVencimiento = new Date(fechaPago);
-            fechaVencimiento.setDate(
-              fechaVencimiento.getDate() +
-                (membresia.duracio_dias || membresia.duracion || 0)
-            );
-
-            await sociosService.update(socio.id, {
-              membresia: membresia.id,
-              fecha_vencimiento: fechaVencimiento.toISOString().split("T")[0],
-              estado_socio: "Activo",
-            });
-          }
+          const sociosResult = await sociosService.getAll({
+            sort: "Nombre",
+            expand: "membresia",
+          });
+          setSociosList(sociosResult.items);
+        } catch (errCreate) {
+          // Si la política impide el pago, mostrar mensaje
+          console.error("Error al crear pago seguro:", errCreate);
+          alert(
+            errCreate.message || "No se pudo crear el pago: ya existe vigencia"
+          );
         }
       }
 
@@ -419,7 +481,8 @@ const Pagos = () => {
       precio: parseFloat(formData.get("precio")) || 0,
       duracio_dias: parseInt(formData.get("duracion")) || 0,
       descripcion: formData.get("descripcion") || "",
-      activa: formData.get("activa") === "on" || formData.get("activa") === "true",
+      activa:
+        formData.get("activa") === "on" || formData.get("activa") === "true",
     };
 
     try {
@@ -483,7 +546,10 @@ const Pagos = () => {
           <>
             <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
               <h2 className="text-lg font-semibold">Gestión de Planes</h2>
-              <button onClick={handleAddNewPlan} className="btn btn-primary mt-2 md:mt-0">
+              <button
+                onClick={handleAddNewPlan}
+                className="btn btn-primary mt-2 md:mt-0"
+              >
                 Nuevo Plan
               </button>
             </div>
@@ -767,24 +833,80 @@ const Pagos = () => {
       >
         <div className="grid grid-cols-1 gap-4">
           <div>
-            <label htmlFor="nombre" className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
-            <input id="nombre" name="nombre" className="form-input" defaultValue={currentPlan?.nombre || ''} required />
+            <label
+              htmlFor="nombre"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Nombre
+            </label>
+            <input
+              id="nombre"
+              name="nombre"
+              className="form-input"
+              defaultValue={currentPlan?.nombre || ""}
+              required
+            />
           </div>
           <div>
-            <label htmlFor="precio" className="block text-sm font-medium text-gray-700 mb-1">Precio</label>
-            <input id="precio" name="precio" type="number" step="0.01" className="form-input" defaultValue={currentPlan?.precio || 0} required />
+            <label
+              htmlFor="precio"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Precio
+            </label>
+            <input
+              id="precio"
+              name="precio"
+              type="number"
+              step="0.01"
+              className="form-input"
+              defaultValue={currentPlan?.precio || 0}
+              required
+            />
           </div>
           <div>
-            <label htmlFor="duracion" className="block text-sm font-medium text-gray-700 mb-1">Duración (días)</label>
-            <input id="duracion" name="duracion" type="number" className="form-input" defaultValue={currentPlan?.duracio_dias || currentPlan?.duracion || 30} required />
+            <label
+              htmlFor="duracion"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Duración (días)
+            </label>
+            <input
+              id="duracion"
+              name="duracion"
+              type="number"
+              className="form-input"
+              defaultValue={
+                currentPlan?.duracio_dias || currentPlan?.duracion || 30
+              }
+              required
+            />
           </div>
           <div>
-            <label htmlFor="descripcion" className="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
-            <textarea id="descripcion" name="descripcion" className="form-input">{currentPlan?.descripcion || ''}</textarea>
+            <label
+              htmlFor="descripcion"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Descripción
+            </label>
+            <textarea
+              id="descripcion"
+              name="descripcion"
+              className="form-input"
+            >
+              {currentPlan?.descripcion || ""}
+            </textarea>
           </div>
           <div className="flex items-center space-x-2">
-            <input id="activa" name="activa" type="checkbox" defaultChecked={currentPlan?.activa || true} />
-            <label htmlFor="activa" className="text-sm">Activa</label>
+            <input
+              id="activa"
+              name="activa"
+              type="checkbox"
+              defaultChecked={currentPlan?.activa || true}
+            />
+            <label htmlFor="activa" className="text-sm">
+              Activa
+            </label>
           </div>
         </div>
       </ModalForm>
@@ -817,9 +939,12 @@ const Pagos = () => {
         size="sm"
       >
         <p className="mb-4">
-          ¿Está seguro de que desea eliminar el plan <span className="font-medium">{planToDelete?.nombre}</span>?
+          ¿Está seguro de que desea eliminar el plan{" "}
+          <span className="font-medium">{planToDelete?.nombre}</span>?
         </p>
-        <p className="text-sm text-red-600">Esta acción no se puede deshacer.</p>
+        <p className="text-sm text-red-600">
+          Esta acción no se puede deshacer.
+        </p>
       </ModalForm>
     </div>
   );

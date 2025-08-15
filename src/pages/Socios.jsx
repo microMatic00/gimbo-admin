@@ -4,7 +4,10 @@ import ModalForm from "../components/ModalForm";
 import { UserPlusIcon } from "@heroicons/react/24/outline";
 import { SociosService } from "../services/gimnasio-services";
 import { usePocketBase } from "../context/usePocketBase";
-import { getExpirationDate, getVencimientoStatus } from "../lib/membresia-utils";
+import {
+  getExpirationDate,
+  getVencimientoStatus,
+} from "../lib/membresia-utils";
 
 const Socios = () => {
   const [sociosList, setSociosList] = useState([]);
@@ -66,7 +69,11 @@ const Socios = () => {
       key: "membresia",
       header: "Membresía",
       render: (item) => (
-        <span>{item.expand?.membresia?.nombre || item.membresia?.nombre || "Sin membresía"}</span>
+        <span>
+          {item.expand?.membresia?.nombre ||
+            item.membresia?.nombre ||
+            "Sin membresía"}
+        </span>
       ),
     },
     {
@@ -94,7 +101,9 @@ const Socios = () => {
       key: "fecha_vencimiento",
       header: "Vencimiento",
       render: (item) =>
-        getExpirationDate(item) ? formatDate(getExpirationDate(item)) : "Sin definir",
+        getExpirationDate(item)
+          ? formatDate(getExpirationDate(item))
+          : "Sin definir",
     },
   ];
 
@@ -231,12 +240,16 @@ const Socios = () => {
           </p>
         </div>
         <div className="bg-white p-4 rounded-lg shadow-sm">
-            <h3 className="text-sm font-medium text-gray-500">
-              Próximos a Vencer
-            </h3>
-            <p className="text-2xl font-bold">
-              {sociosList.filter((s) => getVencimientoStatus(s) === "Próximo a vencer").length}
-            </p>
+          <h3 className="text-sm font-medium text-gray-500">
+            Próximos a Vencer
+          </h3>
+          <p className="text-2xl font-bold">
+            {
+              sociosList.filter(
+                (s) => getVencimientoStatus(s) === "Próximo a vencer"
+              ).length
+            }
+          </p>
         </div>
       </div>
 
@@ -412,7 +425,10 @@ const Socios = () => {
       >
         <p className="mb-4">
           ¿Está seguro de que desea eliminar al socio "
-          <span className="font-medium">{socioToDelete?.Nombre || socioToDelete?.nombre}</span>"?
+          <span className="font-medium">
+            {socioToDelete?.Nombre || socioToDelete?.nombre}
+          </span>
+          "?
         </p>
         <p className="text-sm text-red-600">
           Esta acción no se puede deshacer.
