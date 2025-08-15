@@ -4,6 +4,10 @@ import ModalForm from "../components/ModalForm";
 import { UserPlusIcon } from "@heroicons/react/24/outline";
 import { SociosService } from "../services/gimnasio-services";
 import { usePocketBase } from "../context/usePocketBase";
+import {
+  getExpirationDate,
+  getVencimientoStatus,
+} from "../lib/membresia-utils";
 
 const Socios = () => {
   const [sociosList, setSociosList] = useState([]);
@@ -53,6 +57,9 @@ const Socios = () => {
   }, [isAuthenticated]);
 
   // Columnas para la tabla
+  // Usar utilidades compartidas para vencimientos
+
+  // Columnas para la tabla
   const columns = [
     { key: "Nombre", header: "Nombre" },
     { key: "documento", header: "Documento" },
@@ -62,32 +69,40 @@ const Socios = () => {
       key: "membresia",
       header: "Membresía",
       render: (item) => (
-        <span>{item.expand?.membresia?.nombre || "Sin membresía"}</span>
+        <span>
+          {item.expand?.membresia?.nombre ||
+            item.membresia?.nombre ||
+            "Sin membresía"}
+        </span>
       ),
     },
     {
       key: "estado_socio",
       header: "Estado",
-      render: (item) => (
-        <span
-          className={`px-2 py-1 rounded-full text-xs font-medium ${
-            item.estado_socio === "Activo"
-              ? "bg-green-100 text-green-800"
-              : item.estado_socio === "Inactivo"
-              ? "bg-red-100 text-red-800"
-              : "bg-yellow-100 text-yellow-800"
-          }`}
-        >
-          {item.estado_socio}
-        </span>
-      ),
+      render: (item) => {
+        const vencStatus = getVencimientoStatus(item);
+        const status = vencStatus || item.estado_socio || "Inactivo";
+        return (
+          <span
+            className={`px-2 py-1 rounded-full text-xs font-medium ${
+              status === "Activo"
+                ? "bg-green-100 text-green-800"
+                : status === "Vencido"
+                ? "bg-red-100 text-red-800"
+                : "bg-yellow-100 text-yellow-800"
+            }`}
+          >
+            {status}
+          </span>
+        );
+      },
     },
     {
       key: "fecha_vencimiento",
       header: "Vencimiento",
       render: (item) =>
-        item.fecha_vencimiento
-          ? formatDate(item.fecha_vencimiento)
+        getExpirationDate(item)
+          ? formatDate(getExpirationDate(item))
           : "Sin definir",
     },
   ];
@@ -230,8 +245,9 @@ const Socios = () => {
           </h3>
           <p className="text-2xl font-bold">
             {
-              sociosList.filter((s) => s.estado_socio === "Próximo a vencer")
-                .length
+              sociosList.filter(
+                (s) => getVencimientoStatus(s) === "Próximo a vencer"
+              ).length
             }
           </p>
         </div>
@@ -379,22 +395,6 @@ const Socios = () => {
           <div> */}
           <div>
             <label
-              htmlFor="nombre"
-              className="block text-sm font-medium text-gray-700 mb-1"
-            >
-              Nombre Completo
-            </label>
-            <input
-              id="nombre"
-              name="nombre"
-              type="text"
-              className="form-input"
-              defaultValue={currentSocio?.nombre || ""}
-              required
-            />
-          </div>
-          <div>
-            <label
               htmlFor="estado"
               className="block text-sm font-medium text-gray-700 mb-1"
             >
@@ -409,7 +409,6 @@ const Socios = () => {
             >
               <option value="Activo">Activo</option>
               <option value="Vencido">Vencido</option>
-              <option value="Próximo a vencer">Próximo a vencer</option>
             </select>
           </div>
         </div>
@@ -425,8 +424,11 @@ const Socios = () => {
         size="sm"
       >
         <p className="mb-4">
-          ¿Está seguro de que desea eliminar al socio{" "}
-          <span className="font-medium">{socioToDelete?.nombre}</span>?
+          ¿Está seguro de que desea eliminar al socio "
+          <span className="font-medium">
+            {socioToDelete?.Nombre || socioToDelete?.nombre}
+          </span>
+          "?
         </p>
         <p className="text-sm text-red-600">
           Esta acción no se puede deshacer.
