@@ -4,6 +4,7 @@ import ModalForm from "../components/ModalForm";
 import { UserPlusIcon } from "@heroicons/react/24/outline";
 import { SociosService } from "../services/gimnasio-services";
 import { usePocketBase } from "../context/usePocketBase";
+import { getExpirationDate, getVencimientoStatus } from "../lib/membresia-utils";
 
 const Socios = () => {
   const [sociosList, setSociosList] = useState([]);
@@ -53,45 +54,7 @@ const Socios = () => {
   }, [isAuthenticated]);
 
   // Columnas para la tabla
-  // Utilidades para calcular vencimientos a partir de la membresía
-  const addDays = (date, days) => {
-    const d = new Date(date);
-    d.setDate(d.getDate() + Number(days));
-    return d;
-  };
-
-  const getExpirationDate = (socio) => {
-    // Si ya existe fecha_vencimiento, usarla
-    if (socio?.fecha_vencimiento) return new Date(socio.fecha_vencimiento);
-
-    // Intentar obtener la membresía expandida o directa
-    const membresia = socio?.expand?.membresia || socio?.membresia || null;
-
-    const duracion =
-      membresia?.duracio_dias ||
-      membresia?.duracion ||
-      membresia?.duracion_dias ||
-      membresia?.duracionDias ||
-      membresia?.dias;
-
-    const fechaInscripcion = socio?.fecha_inscripcion || socio?.fechaRegistro || socio?.fecha_registro;
-
-    if (fechaInscripcion && duracion) {
-      return addDays(new Date(fechaInscripcion), Number(duracion));
-    }
-
-    return null;
-  };
-
-  const getVencimientoStatus = (socio) => {
-    const exp = getExpirationDate(socio);
-    if (!exp) return null;
-    const today = new Date();
-    const diffDays = Math.ceil((exp - today) / (1000 * 60 * 60 * 24));
-    if (diffDays < 0) return "Vencido";
-    if (diffDays <= 7) return "Próximo a vencer";
-    return "Activo";
-  };
+  // Usar utilidades compartidas para vencimientos
 
   // Columnas para la tabla
   const columns = [
@@ -448,8 +411,8 @@ const Socios = () => {
         size="sm"
       >
         <p className="mb-4">
-          ¿Está seguro de que desea eliminar al socio{" "}
-          <span className="font-medium">{socioToDelete?.nombre}</span>?
+          ¿Está seguro de que desea eliminar al socio "
+          <span className="font-medium">{socioToDelete?.Nombre || socioToDelete?.nombre}</span>"?
         </p>
         <p className="text-sm text-red-600">
           Esta acción no se puede deshacer.

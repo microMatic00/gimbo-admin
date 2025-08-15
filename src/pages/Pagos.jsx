@@ -7,6 +7,7 @@ import {
   SociosService,
   MembresiasService,
 } from "../services/gimnasio-services";
+import { getExpirationDate, getVencimientoStatus } from "../lib/membresia-utils";
 
 import {
   CurrencyDollarIcon,
@@ -20,6 +21,10 @@ const Pagos = () => {
   const [planesList, setPlanesList] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentPago, setCurrentPago] = useState(null);
+  const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
+  const [currentPlan, setCurrentPlan] = useState(null);
+  const [isPlanDeleteModalOpen, setIsPlanDeleteModalOpen] = useState(false);
+  const [planToDelete, setPlanToDelete] = useState(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [pagoToDelete, setPagoToDelete] = useState(null);
   const [activeTab, setActiveTab] = useState("pagos"); // pagos, planes, vencimientos
@@ -177,32 +182,26 @@ const Pagos = () => {
 
     const hoy = new Date();
     const resultados = sociosList
-      .filter((socio) => socio.fecha_vencimiento) // solo aquellos con fecha de vencimiento
       .map((socio) => {
-        const fechaVencimiento = new Date(socio.fecha_vencimiento);
-        const diasRestantes = Math.ceil(
-          (fechaVencimiento - hoy) / (1000 * 60 * 60 * 24)
-        );
-        const estado =
-          diasRestantes < 0
-            ? "Vencido"
-            : diasRestantes <= 7
-            ? "Próximo a vencer"
-            : "Activo";
+        const fechaVencimientoObj = getExpirationDate(socio);
+        const fechaVencimiento = fechaVencimientoObj
+          ? fechaVencimientoObj.toISOString().split("T")[0]
+          : null;
+        const diasRestantes = fechaVencimientoObj
+          ? Math.ceil((fechaVencimientoObj - hoy) / (1000 * 60 * 60 * 24))
+          : null;
+        const estado = getVencimientoStatus(socio) || "Sin definir";
 
         return {
           id: socio.id,
           nombre: socio.Nombre,
           plan: socio.expand?.membresia?.nombre || "Desconocido",
           estado: estado,
-          fechaVencimiento: socio.fecha_vencimiento,
+          fechaVencimiento: fechaVencimiento,
           diasRestantes: diasRestantes,
         };
       })
-      .filter(
-        (socio) =>
-          socio.estado === "Próximo a vencer" || socio.estado === "Vencido"
-      );
+      .filter((socio) => socio.estado === "Próximo a vencer" || socio.estado === "Vencido");
 
     setVencimientos(resultados);
   }, [sociosList]);
@@ -274,6 +273,38 @@ const Pagos = () => {
   const handleAddNew = () => {
     setCurrentPago(null);
     setIsModalOpen(true);
+  };
+
+  // Abrir el modal para crear un nuevo plan/membresía
+  const handleAddNewPlan = () => {
+    setCurrentPlan(null);
+    setIsPlanModalOpen(true);
+  };
+
+  // Abrir el modal para editar un plan
+  const handleEditPlan = (plan) => {
+    setCurrentPlan(plan);
+    setIsPlanModalOpen(true);
+  };
+
+  // Abrir modal de confirmación para eliminar plan
+  const handleDeletePlan = (plan) => {
+    setPlanToDelete(plan);
+    setIsPlanDeleteModalOpen(true);
+  };
+
+  // Confirmar eliminación de plan
+  const confirmDeletePlan = async () => {
+    try {
+      const membresiasService = membresiasServiceRef.current;
+      await membresiasService.delete(planToDelete.id);
+      // actualizar lista local
+      setPlanesList((prev) => prev.filter((p) => p.id !== planToDelete.id));
+      setIsPlanDeleteModalOpen(false);
+    } catch (error) {
+      console.error("Error al eliminar plan:", error);
+      alert("Error al eliminar el plan: " + error.message);
+    }
   };
 
   // Abrir el modal para editar un pago
@@ -377,6 +408,37 @@ const Pagos = () => {
     }
   };
 
+  // Manejar el envío del formulario para crear/editar un plan (membresía)
+  const handlePlanSubmit = async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const membresiasService = membresiasServiceRef.current;
+
+    const planData = {
+      nombre: formData.get("nombre"),
+      precio: parseFloat(formData.get("precio")) || 0,
+      duracio_dias: parseInt(formData.get("duracion")) || 0,
+      descripcion: formData.get("descripcion") || "",
+      activa: formData.get("activa") === "on" || formData.get("activa") === "true",
+    };
+
+    try {
+      if (currentPlan) {
+        await membresiasService.update(currentPlan.id, planData);
+      } else {
+        await membresiasService.create(planData);
+      }
+
+      // Recargar la lista de planes
+      const planesResult = await membresiasService.getAll({ sort: "precio" });
+      setPlanesList(planesResult.items);
+      setIsPlanModalOpen(false);
+    } catch (error) {
+      console.error("Error al guardar plan:", error);
+      alert("Error al guardar el plan: " + error.message);
+    }
+  };
+
   // Manejar la generación de reporte
   const handleGenerateReport = () => {
     // En una implementación real, esto generaría un PDF o Excel
@@ -421,15 +483,15 @@ const Pagos = () => {
           <>
             <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
               <h2 className="text-lg font-semibold">Gestión de Planes</h2>
-              <button className="btn btn-primary mt-2 md:mt-0">
+              <button onClick={handleAddNewPlan} className="btn btn-primary mt-2 md:mt-0">
                 Nuevo Plan
               </button>
             </div>
             <Table
               columns={planesColumns}
               data={planesList}
-              onEdit={() => {}} // En una implementación completa, esto abriría un modal
-              onDelete={() => {}}
+              onEdit={handleEditPlan}
+              onDelete={handleDeletePlan}
             />
           </>
         );
@@ -696,6 +758,37 @@ const Pagos = () => {
         </div>
       </ModalForm>
 
+      {/* Modal para crear/editar plan (membresía) */}
+      <ModalForm
+        isOpen={isPlanModalOpen}
+        onClose={() => setIsPlanModalOpen(false)}
+        title={currentPlan ? "Editar Plan" : "Nuevo Plan"}
+        onSubmit={handlePlanSubmit}
+      >
+        <div className="grid grid-cols-1 gap-4">
+          <div>
+            <label htmlFor="nombre" className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
+            <input id="nombre" name="nombre" className="form-input" defaultValue={currentPlan?.nombre || ''} required />
+          </div>
+          <div>
+            <label htmlFor="precio" className="block text-sm font-medium text-gray-700 mb-1">Precio</label>
+            <input id="precio" name="precio" type="number" step="0.01" className="form-input" defaultValue={currentPlan?.precio || 0} required />
+          </div>
+          <div>
+            <label htmlFor="duracion" className="block text-sm font-medium text-gray-700 mb-1">Duración (días)</label>
+            <input id="duracion" name="duracion" type="number" className="form-input" defaultValue={currentPlan?.duracio_dias || currentPlan?.duracion || 30} required />
+          </div>
+          <div>
+            <label htmlFor="descripcion" className="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
+            <textarea id="descripcion" name="descripcion" className="form-input">{currentPlan?.descripcion || ''}</textarea>
+          </div>
+          <div className="flex items-center space-x-2">
+            <input id="activa" name="activa" type="checkbox" defaultChecked={currentPlan?.activa || true} />
+            <label htmlFor="activa" className="text-sm">Activa</label>
+          </div>
+        </div>
+      </ModalForm>
+
       {/* Modal de confirmación para eliminar */}
       <ModalForm
         isOpen={isDeleteModalOpen}
@@ -712,6 +805,21 @@ const Pagos = () => {
         <p className="text-sm text-red-600">
           Esta acción no se puede deshacer.
         </p>
+      </ModalForm>
+
+      {/* Modal de confirmación para eliminar plan */}
+      <ModalForm
+        isOpen={isPlanDeleteModalOpen}
+        onClose={() => setIsPlanDeleteModalOpen(false)}
+        title="Confirmar Eliminación de Plan"
+        onSubmit={confirmDeletePlan}
+        submitButtonText="Eliminar"
+        size="sm"
+      >
+        <p className="mb-4">
+          ¿Está seguro de que desea eliminar el plan <span className="font-medium">{planToDelete?.nombre}</span>?
+        </p>
+        <p className="text-sm text-red-600">Esta acción no se puede deshacer.</p>
       </ModalForm>
     </div>
   );
