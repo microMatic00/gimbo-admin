@@ -101,3 +101,6 @@ export const ROUTES = {
   STAFF: "/staff",
   CLIENTE_APP: "/cliente-app",
 };
+
+// URL de PocketBase (puede ser sobrescrita por la variable de entorno VITE_POCKETBASE_URL)
+export const POCKETBASE_URL = "http://127.0.0.1:8090";
