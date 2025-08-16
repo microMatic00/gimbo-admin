@@ -74,4 +74,5 @@
   .data-table tr:nth-child(even) {
     @apply bg-gray-50;
   }
+  
 }
