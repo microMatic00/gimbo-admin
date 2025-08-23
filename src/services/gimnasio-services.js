@@ -261,24 +261,23 @@ export class ReservasClaseService extends PocketBaseService {
       socio: socioId,
       clase: claseId,
       fecha: fecha,
-      estado: "Confirmada",
       creado_en: new Date().toISOString(),
     };
 
     return this.create(data);
   }
 
-  // Método para cancelar una reserva
+  // Método para cancelar una reserva (elimina la reserva en lugar de cambiar estado)
   async cancelarReserva(reservaId) {
-    return this.update(reservaId, {
-      estado: "Cancelada",
-    });
+    return this.delete(reservaId);
   }
 
-  // Método para marcar asistencia
-  async marcarAsistencia(reservaId) {
+  // Método para marcar asistencia (agregar comentario o campo separado si necesitas)
+  async marcarAsistencia(reservaId, notas = "") {
     return this.update(reservaId, {
-      estado: "Asistió",
+      asistio: true,
+      fecha_asistencia: new Date().toISOString(),
+      notas: notas,
     });
   }
 

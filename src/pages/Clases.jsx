@@ -473,21 +473,45 @@ const Clases = () => {
   // Manejar el envío del formulario de reserva
   const handleReservaSubmit = async (e) => {
     e.preventDefault();
+    console.log("🔄 handleReservaSubmit iniciado");
+
     const formData = new FormData(e.target);
+    console.log("📋 FormData obtenido:", {
+      socioId: formData.get("socioId"),
+      fecha: formData.get("fecha"),
+      selectedClase: selectedClase?.id,
+    });
 
     const reservaData = {
       socio: formData.get("socioId"),
       clase: selectedClase.id,
       fecha: formData.get("fecha"),
-      estado: "Confirmada",
+      // Eliminamos el campo estado
     };
 
+    console.log("📝 Datos de reserva a enviar:", reservaData);
+
+    // Validaciones
+    if (!reservaData.socio) {
+      console.error("❌ Error: No se seleccionó un socio");
+      showToast("Por favor selecciona un socio", "error");
+      return;
+    }
+
+    if (!reservaData.fecha) {
+      console.error("❌ Error: No se seleccionó una fecha");
+      showToast("Por favor selecciona una fecha", "error");
+      return;
+    }
+
     try {
+      console.log("🚀 Llamando a reservasService.crearReserva...");
       const newReserva = await reservasService.crearReserva(
         reservaData.socio,
         reservaData.clase,
         reservaData.fecha
       );
+      console.log("✅ Reserva creada exitosamente:", newReserva);
 
       // Agregar nueva reserva a la lista con expand si es posible
       const reservaConExpand = {
@@ -502,8 +526,13 @@ const Clases = () => {
       setIsReservaModalOpen(false);
       showToast("Reserva creada exitosamente", "success");
     } catch (err) {
-      console.error("Error al crear reserva:", err);
-      showToast("Error al crear la reserva", "error");
+      console.error("❌ Error al crear reserva:", err);
+      console.error("❌ Error details:", {
+        message: err.message,
+        status: err.status,
+        data: err.data,
+      });
+      showToast(`Error al crear la reserva: ${err.message}`, "error");
     }
   };
 
