@@ -53,7 +53,7 @@ const Sidebar = () => {
       {/* Sidebar for desktop */}
       <div
         className={`
-        fixed inset-y-0 left-0 z-30 w-64 bg-dark text-white transform transition-transform duration-300 ease-in-out
+        fixed inset-y-0 left-0 z-30 w-64 bg-dark text-white transform transition-transform duration-300 ease-in-out relati
         ${
           mobileMenuOpen
             ? "translate-x-0"
@@ -61,7 +61,7 @@ const Sidebar = () => {
         }
       `}
       >
-        <div className="p-6">
+        <div className="p-6 relative">
           <div className="flex items-center justify-center mb-8">
             <h2 className="text-2xl font-bold text-primary">GIMBO</h2>
           </div>
