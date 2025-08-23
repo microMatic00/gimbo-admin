@@ -1,7 +1,13 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import ModalForm from "../components/ModalForm";
 import Table from "../components/Table";
-import { clases, reservas, socios } from "../data/mockData";
+import { useToast } from "../hooks/useToast";
+import { usePocketBase } from "../context/usePocketBase";
+import { 
+  ClasesService, 
+  ReservasClaseService, 
+  SociosService 
+} from "../services/gimnasio-services";
 import {
   CalendarIcon,
   PlusCircleIcon,
@@ -14,44 +20,207 @@ const Clases = () => {
   const [currentClase, setCurrentClase] = useState(null);
   const [isReservaModalOpen, setIsReservaModalOpen] = useState(false);
   const [selectedClase, setSelectedClase] = useState(null);
-  const [clasesList, setClasesList] = useState(clases);
-  const [reservasList, setReservasList] = useState(reservas);
+  
+  // Estados para datos desde PocketBase
+  const [clasesList, setClasesList] = useState([]);
+  const [reservasList, setReservasList] = useState([]);
+  const [sociosList, setSociosList] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const { push: showToast } = useToast();
+  const { pb, currentUser, isAuthenticated } = usePocketBase();
+  
+  // Instancias de servicios con useMemo para evitar recreación
+  // Nota: Estos servicios ya tienen acceso a la instancia pb global
+  const clasesService = useMemo(() => new ClasesService(), []);
+  const reservasService = useMemo(() => new ReservasClaseService(), []);
+  const sociosService = useMemo(() => new SociosService(), []);
+
+  // Cargar datos al montar el componente
+  useEffect(() => {
+    // Función para cargar todos los datos
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        // Verificar si el usuario está autenticado
+        if (!isAuthenticated) {
+          setError("Usuario no autenticado");
+          return;
+        }
+
+        // Ejecutar pruebas de API (removido - ya no necesario)
+        console.log("🔄 Iniciando carga de datos...");
+        console.log("Usuario actual:", currentUser);
+        console.log("Token válido:", isAuthenticated);
+        console.log("PocketBase URL:", import.meta.env.VITE_POCKETBASE_URL || "URL por defecto");
+        console.log("PocketBase instance:", pb.baseUrl);
+
+        const [clasesData, reservasData, sociosData] = await Promise.all([
+          clasesService.getClasesActivas(),
+          reservasService.getAll({ expand: "socio,clase" }),
+          sociosService.getSociosActivos()
+        ]);
+
+        setClasesList(clasesData.items || []);
+        setReservasList(reservasData.items || []);
+        setSociosList(sociosData.items || []);
+      } catch (err) {
+        console.error("Error cargando datos:", err);
+        
+        if (err.status === 403) {
+          setError("No tienes permisos para acceder a esta información. Las reglas de PocketBase requieren permisos de administrador.");
+          showToast("Error de permisos: Contacta al administrador", "error");
+        } else if (err.status === 401) {
+          setError("Sesión expirada. Por favor, inicia sesión nuevamente.");
+          showToast("Sesión expirada", "error");
+        } else {
+          setError(`Error al cargar los datos: ${err.message}`);
+          showToast(`Error: ${err.message}`, "error");
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+
+    return () => {
+      // Cancelar peticiones al desmontar
+      clasesService.abortAll();
+      reservasService.abortAll();
+      sociosService.abortAll();
+    };
+  }, [clasesService, reservasService, sociosService, showToast, currentUser, isAuthenticated, pb.baseUrl]);
+
+  // Función para recargar datos manualmente
+  const handleRetry = async () => {
+    // Función para cargar todos los datos
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        // Verificar si el usuario está autenticado
+        if (!isAuthenticated) {
+          setError("Usuario no autenticado");
+          return;
+        }
+
+        console.log("Usuario actual:", currentUser);
+        console.log("Token válido:", isAuthenticated);
+        console.log("PocketBase URL:", import.meta.env.VITE_POCKETBASE_URL || "URL por defecto");
+
+        const [clasesData, reservasData, sociosData] = await Promise.all([
+          clasesService.getClasesActivas(),
+          reservasService.getAll({ expand: "socio,clase" }),
+          sociosService.getSociosActivos()
+        ]);
+
+        setClasesList(clasesData.items || []);
+        setReservasList(reservasData.items || []);
+        setSociosList(sociosData.items || []);
+      } catch (err) {
+        console.error("Error cargando datos:", err);
+        
+        if (err.status === 403) {
+          setError("No tienes permisos para acceder a esta información. Las reglas de PocketBase requieren permisos de administrador.");
+          showToast("Error de permisos: Contacta al administrador", "error");
+        } else if (err.status === 401) {
+          setError("Sesión expirada. Por favor, inicia sesión nuevamente.");
+          showToast("Sesión expirada", "error");
+        } else {
+          setError(`Error al cargar los datos: ${err.message}`);
+          showToast(`Error: ${err.message}`, "error");
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    await loadData();
+  };
 
   // Columnas para la tabla de clases
   const clasesColumns = [
     { key: "nombre", header: "Nombre" },
     { key: "instructor", header: "Instructor" },
-    { key: "dias", header: "Días" },
-    { key: "horario", header: "Horario" },
+    { 
+      key: "dia_semana", 
+      header: "Días",
+      render: (item) => {
+        // dia_semana es un array de strings con comillas
+        if (Array.isArray(item.dia_semana)) {
+          return item.dia_semana.map(dia => dia.replace(/"/g, '')).join(', ');
+        }
+        return item.dia_semana || '';
+      }
+    },
+    { 
+      key: "horario", 
+      header: "Horario",
+      render: (item) => {
+        const duracion = item.duracion_minutos || 60;
+        const inicio = item.hora_inicio || '';
+        if (inicio) {
+          // Calcular hora fin basada en duración
+          const [horas, minutos] = inicio.split(':').map(Number);
+          const inicioMinutos = horas * 60 + minutos;
+          const finMinutos = inicioMinutos + duracion;
+          const horaFin = Math.floor(finMinutos / 60);
+          const minutosFin = finMinutos % 60;
+          const horaFinFormatted = `${horaFin.toString().padStart(2, '0')}:${minutosFin.toString().padStart(2, '0')}`;
+          return `${inicio} - ${horaFinFormatted}`;
+        }
+        return '';
+      }
+    },
     {
-      key: "cupoMaximo",
+      key: "capacidad_maxima",
       header: "Cupo",
       render: (item) => {
         // Calcular las reservas actuales para esta clase
         const reservasDeLaClase = reservasList.filter(
-          (r) => r.claseId === item.id
+          (r) => r.clase === item.id
         );
-        return `${reservasDeLaClase.length}/${item.cupoMaximo}`;
+        return `${reservasDeLaClase.length}/${item.capacidad_maxima || 'N/A'}`;
       },
     },
+    {
+      key: "nivel",
+      header: "Nivel",
+      render: (item) => item.nivel?.replace(/"/g, '') || 'Todos'
+    }
   ];
 
   // Columnas para la tabla de reservas
   const reservasColumns = [
     {
-      key: "socioId",
+      key: "socio",
       header: "Socio",
       render: (item) => {
-        const socio = socios.find((s) => s.id === item.socioId);
-        return socio ? socio.nombre : "Desconocido";
+        // Si tenemos expand, usar el nombre expandido
+        if (item.expand?.socio) {
+          return item.expand.socio.Nombre || item.expand.socio.nombre || "Desconocido";
+        }
+        // Fallback: buscar en la lista local
+        const socio = sociosList.find((s) => s.id === item.socio);
+        return socio?.Nombre || socio?.nombre || "Desconocido";
       },
     },
     {
-      key: "claseId",
+      key: "clase",
       header: "Clase",
       render: (item) => {
-        const clase = clases.find((c) => c.id === item.claseId);
-        return clase ? clase.nombre : "Desconocida";
+        // Si tenemos expand, usar el nombre expandido
+        if (item.expand?.clase) {
+          return item.expand.clase.nombre || "Desconocida";
+        }
+        // Fallback: buscar en la lista local
+        const clase = clasesList.find((c) => c.id === item.clase);
+        return clase?.nombre || "Desconocida";
       },
     },
     {
@@ -60,25 +229,26 @@ const Clases = () => {
       render: (item) => formatDate(item.fecha),
     },
     {
-      key: "asistio",
+      key: "estado",
       header: "Estado",
       render: (item) => {
-        if (item.asistio === true) {
+        const estado = item.estado;
+        if (estado === "Asistió") {
           return (
             <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
               Asistió
             </span>
           );
-        } else if (item.asistio === false) {
+        } else if (estado === "Cancelada") {
           return (
             <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-              No Asistió
+              Cancelada
             </span>
           );
         } else {
           return (
             <span className="px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-              Pendiente
+              Confirmada
             </span>
           );
         }
@@ -111,64 +281,125 @@ const Clases = () => {
   };
 
   // Manejar el envío del formulario de clase
-  const handleClaseSubmit = (e) => {
+  const handleClaseSubmit = async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
 
-    const claseData = {
-      id: currentClase?.id || clasesList.length + 1,
-      nombre: formData.get("nombre"),
-      instructor: formData.get("instructor"),
-      dias: formData.get("dias"),
-      horario: formData.get("horario"),
-      cupoMaximo: parseInt(formData.get("cupoMaximo")),
-      descripcion: formData.get("descripcion"),
-    };
+    // Obtener días seleccionados (múltiples checkboxes)
+    const diasSeleccionados = [];
+    const checkboxes = e.target.querySelectorAll('input[name="dia_semana"]:checked');
+    checkboxes.forEach(checkbox => {
+      diasSeleccionados.push(`"${checkbox.value}"`);
+    });
 
-    if (currentClase) {
-      // Actualizar clase existente
-      setClasesList(
-        clasesList.map((clase) =>
-          clase.id === currentClase.id ? claseData : clase
-        )
-      );
-    } else {
-      // Agregar nueva clase
-      setClasesList([...clasesList, claseData]);
+    // Validar que se haya seleccionado al menos un día
+    if (diasSeleccionados.length === 0) {
+      showToast("Debe seleccionar al menos un día de la semana", "error");
+      return;
     }
 
-    setIsModalOpen(false);
+    const claseData = {
+      nombre: formData.get("nombre"),
+      instructor: formData.get("instructor"),
+      dia_semana: diasSeleccionados, // Array de días
+      hora_inicio: formData.get("hora_inicio"),
+      duracion_minutos: parseInt(formData.get("duracion_minutos")) || 60,
+      capacidad_maxima: parseInt(formData.get("capacidad_maxima")) || 15,
+      descripcion: formData.get("descripcion") || "",
+      nivel: `"${formData.get("nivel") || "Todos"}"`, // Agregar comillas dobles
+      activa: true
+    };
+
+    console.log("📝 Datos de clase a enviar:", claseData);
+    console.log("📅 Días seleccionados:", diasSeleccionados);
+    console.log("🏷️ Nivel con formato:", `"${formData.get("nivel") || "Todos"}"`);
+
+    try {
+      if (currentClase) {
+        // Actualizar clase existente
+        console.log("🔄 Actualizando clase existente...");
+        const updatedClase = await clasesService.update(currentClase.id, claseData);
+        setClasesList(clasesList.map((clase) =>
+          clase.id === currentClase.id ? updatedClase : clase
+        ));
+        showToast("Clase actualizada exitosamente", "success");
+      } else {
+        // Agregar nueva clase
+        console.log("➕ Creando nueva clase...");
+        const newClase = await clasesService.create(claseData);
+        console.log("✅ Clase creada:", newClase);
+        setClasesList([...clasesList, newClase]);
+        showToast("Clase creada exitosamente", "success");
+      }
+      setIsModalOpen(false);
+    } catch (err) {
+      console.error("❌ Error al guardar clase:", err);
+      showToast(`Error al guardar la clase: ${err.message}`, "error");
+    }
   };
 
   // Manejar el envío del formulario de reserva
-  const handleReservaSubmit = (e) => {
+  const handleReservaSubmit = async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
 
     const reservaData = {
-      id: reservasList.length + 1,
-      socioId: parseInt(formData.get("socioId")),
-      claseId: selectedClase.id,
+      socio: formData.get("socioId"),
+      clase: selectedClase.id,
       fecha: formData.get("fecha"),
-      asistio: null,
+      estado: "Confirmada"
     };
 
-    // Agregar nueva reserva
-    setReservasList([...reservasList, reservaData]);
-    setIsReservaModalOpen(false);
+    try {
+      const newReserva = await reservasService.crearReserva(
+        reservaData.socio,
+        reservaData.clase,
+        reservaData.fecha
+      );
+      
+      // Agregar nueva reserva a la lista con expand si es posible
+      const reservaConExpand = {
+        ...newReserva,
+        expand: {
+          socio: sociosList.find(s => s.id === reservaData.socio),
+          clase: selectedClase
+        }
+      };
+      
+      setReservasList([...reservasList, reservaConExpand]);
+      setIsReservaModalOpen(false);
+      showToast("Reserva creada exitosamente", "success");
+    } catch (err) {
+      console.error("Error al crear reserva:", err);
+      showToast("Error al crear la reserva", "error");
+    }
   };
 
   // Manejar la eliminación de una clase
-  const handleDeleteClase = (clase) => {
+  const handleDeleteClase = async (clase) => {
     if (window.confirm(`¿Está seguro de eliminar la clase ${clase.nombre}?`)) {
-      setClasesList(clasesList.filter((c) => c.id !== clase.id));
+      try {
+        await clasesService.delete(clase.id);
+        setClasesList(clasesList.filter((c) => c.id !== clase.id));
+        showToast("Clase eliminada exitosamente", "success");
+      } catch (err) {
+        console.error("Error al eliminar clase:", err);
+        showToast("Error al eliminar la clase", "error");
+      }
     }
   };
 
   // Manejar la eliminación de una reserva
-  const handleDeleteReserva = (reserva) => {
+  const handleDeleteReserva = async (reserva) => {
     if (window.confirm("¿Está seguro de eliminar esta reserva?")) {
-      setReservasList(reservasList.filter((r) => r.id !== reserva.id));
+      try {
+        await reservasService.delete(reserva.id);
+        setReservasList(reservasList.filter((r) => r.id !== reserva.id));
+        showToast("Reserva eliminada exitosamente", "success");
+      } catch (err) {
+        console.error("Error al eliminar reserva:", err);
+        showToast("Error al eliminar la reserva", "error");
+      }
     }
   };
 
@@ -232,8 +463,48 @@ const Clases = () => {
         <h1 className="text-2xl font-bold text-gray-800">Agenda de Clases</h1>
       </div>
 
-      {/* Resumen de estadísticas */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      {/* Mostrar loading o error */}
+      {loading && (
+        <div className="flex justify-center items-center py-8">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        </div>
+      )}
+
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6">
+          <div className="flex justify-between items-center">
+            <div>
+              <p className="font-bold">Error de conexión</p>
+              <p>{error}</p>
+              <p className="text-sm mt-2">
+                Para solucionar este problema, revisa la{" "}
+                <a 
+                  href="#" 
+                  className="underline text-red-800"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.open("/docs/CONFIGURACION_PERMISOS.md", "_blank");
+                  }}
+                >
+                  documentación de permisos
+                </a>
+              </p>
+            </div>
+            <button
+              onClick={handleRetry}
+              className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm"
+              disabled={loading}
+            >
+              {loading ? "Cargando..." : "Reintentar"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!loading && !error && (
+        <>
+          {/* Resumen de estadísticas */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-white p-4 rounded-lg shadow-sm">
           <div className="flex items-center">
             <div className="p-3 rounded-full bg-primary-light text-primary mr-4">
@@ -346,7 +617,28 @@ const Clases = () => {
                     ].map((dia, idx) => {
                       // Buscamos si hay clases en este horario y día
                       const clasesEnHorario = clasesList.filter(
-                        (c) => c.horario === horario && c.dias.includes(dia)
+                        (c) => {
+                          // Verificar si el día está en el array dia_semana
+                          const diasClase = Array.isArray(c.dia_semana) 
+                            ? c.dia_semana.map(d => d.replace(/"/g, ''))
+                            : [];
+                          
+                          // Calcular el horario de la clase
+                          const duracion = c.duracion_minutos || 60;
+                          const inicio = c.hora_inicio || '';
+                          if (inicio) {
+                            const [horas, minutos] = inicio.split(':').map(Number);
+                            const inicioMinutos = horas * 60 + minutos;
+                            const finMinutos = inicioMinutos + duracion;
+                            const horaFin = Math.floor(finMinutos / 60);
+                            const minutosFin = finMinutos % 60;
+                            const horaFinFormatted = `${horaFin.toString().padStart(2, '0')}:${minutosFin.toString().padStart(2, '0')}`;
+                            const horaClase = `${inicio} - ${horaFinFormatted}`;
+                            
+                            return horaClase === horario && diasClase.includes(dia);
+                          }
+                          return false;
+                        }
                       );
 
                       return (
@@ -384,6 +676,8 @@ const Clases = () => {
       <div className="bg-white rounded-lg shadow-sm p-4">
         {renderActiveTabContent()}
       </div>
+        </>
+      )}
 
       {/* Modal para crear/editar clase */}
       <ModalForm
@@ -425,56 +719,99 @@ const Clases = () => {
               required
             />
           </div>
+          
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Días de la Semana
+            </label>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"].map((dia) => {
+                const isChecked = currentClase?.dia_semana?.includes(`"${dia}"`) || false;
+                return (
+                  <label key={dia} className="flex items-center">
+                    <input
+                      type="checkbox"
+                      name="dia_semana"
+                      value={dia}
+                      defaultChecked={isChecked}
+                      className="rounded border-gray-300 text-primary focus:ring-primary mr-2"
+                    />
+                    <span className="text-sm">{dia}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
           <div>
             <label
-              htmlFor="dias"
+              htmlFor="hora_inicio"
               className="block text-sm font-medium text-gray-700 mb-1"
             >
-              Días
+              Hora de Inicio
             </label>
             <input
-              id="dias"
-              name="dias"
-              type="text"
+              id="hora_inicio"
+              name="hora_inicio"
+              type="time"
               className="form-input"
-              placeholder="Ej: Lunes, Miércoles y Viernes"
-              defaultValue={currentClase?.dias || ""}
+              defaultValue={currentClase?.hora_inicio || ""}
               required
             />
           </div>
           <div>
             <label
-              htmlFor="horario"
+              htmlFor="duracion_minutos"
               className="block text-sm font-medium text-gray-700 mb-1"
             >
-              Horario
+              Duración (minutos)
             </label>
             <input
-              id="horario"
-              name="horario"
-              type="text"
+              id="duracion_minutos"
+              name="duracion_minutos"
+              type="number"
+              min="15"
+              step="15"
               className="form-input"
-              placeholder="Ej: 18:00 - 19:00"
-              defaultValue={currentClase?.horario || ""}
+              defaultValue={currentClase?.duracion_minutos || "60"}
               required
             />
           </div>
           <div>
             <label
-              htmlFor="cupoMaximo"
+              htmlFor="capacidad_maxima"
               className="block text-sm font-medium text-gray-700 mb-1"
             >
-              Cupo Máximo
+              Capacidad Máxima
             </label>
             <input
-              id="cupoMaximo"
-              name="cupoMaximo"
+              id="capacidad_maxima"
+              name="capacidad_maxima"
               type="number"
               min="1"
               className="form-input"
-              defaultValue={currentClase?.cupoMaximo || "15"}
+              defaultValue={currentClase?.capacidad_maxima || "15"}
               required
             />
+          </div>
+          <div>
+            <label
+              htmlFor="nivel"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Nivel
+            </label>
+            <select
+              id="nivel"
+              name="nivel"
+              className="form-input"
+              defaultValue={currentClase?.nivel?.replace(/"/g, '') || "Todos"}
+            >
+              <option value="Principiante">Principiante</option>
+              <option value="Intermedio">Intermedio</option>
+              <option value="Avanzado">Avanzado</option>
+              <option value="Todos">Todos los niveles</option>
+            </select>
           </div>
           <div className="md:col-span-2">
             <label
@@ -489,7 +826,7 @@ const Clases = () => {
               rows="3"
               className="form-input"
               defaultValue={currentClase?.descripcion || ""}
-              required
+              placeholder="Descripción de la clase..."
             />
           </div>
         </div>
@@ -511,10 +848,17 @@ const Clases = () => {
               <strong>Instructor:</strong> {selectedClase?.instructor}
             </p>
             <p className="text-sm">
-              <strong>Horario:</strong> {selectedClase?.horario}
+              <strong>Horario:</strong> {selectedClase?.hora_inicio} ({selectedClase?.duracion_minutos || 60} min)
             </p>
             <p className="text-sm">
-              <strong>Días:</strong> {selectedClase?.dias}
+              <strong>Días:</strong> {
+                Array.isArray(selectedClase?.dia_semana) 
+                  ? selectedClase.dia_semana.map(d => d.replace(/"/g, '')).join(', ')
+                  : selectedClase?.dia_semana || ''
+              }
+            </p>
+            <p className="text-sm">
+              <strong>Nivel:</strong> {selectedClase?.nivel?.replace(/"/g, '') || 'Todos'}
             </p>
           </div>
 
@@ -533,9 +877,9 @@ const Clases = () => {
                 required
               >
                 <option value="">Seleccionar Socio</option>
-                {socios.map((socio) => (
+                {sociosList.map((socio) => (
                   <option key={socio.id} value={socio.id}>
-                    {socio.nombre}
+                    {socio.Nombre || socio.nombre || 'Sin nombre'}
                   </option>
                 ))}
               </select>
