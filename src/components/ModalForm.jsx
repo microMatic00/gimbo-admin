@@ -79,7 +79,12 @@ const ModalForm = ({
                 </div>
 
                 <div className="mt-4">
-                  <form onSubmit={onSubmit}>
+                  <form
+                    onSubmit={(e) => {
+                      console.log("🔄 Form submit event triggered");
+                      onSubmit(e);
+                    }}
+                  >
                     {children}
 
                     <div className="mt-6 flex justify-end space-x-3">
@@ -91,7 +96,13 @@ const ModalForm = ({
                       >
                         Cancelar
                       </button>
-                      <button type="submit" className="btn btn-primary">
+                      <button
+                        type="submit"
+                        className="btn btn-primary"
+                        onClick={(e) =>
+                          console.log("🖱️ Submit button clicked", e)
+                        }
+                      >
                         {submitButtonText}
                       </button>
                     </div>
